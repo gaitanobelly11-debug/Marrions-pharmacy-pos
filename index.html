@@ -18,7 +18,7 @@ header b{flex:1;font-size:16px}
 header button{background:rgba(255,255,255,.2);color:#fff;border:0;border-radius:8px;padding:6px 10px;font:inherit}
 main{flex:1;overflow:auto;padding:10px 12px 0}
 nav{display:flex;background:#fff;border-top:1px solid var(--bd)}
-nav button{flex:1;border:0;background:none;padding:11px 0;font:inherit;color:var(--mu);border-top:3px solid transparent}
+nav button{flex:1;border:0;background:none;padding:11px 0;font:inherit;font-size:13px;color:var(--mu);border-top:3px solid transparent}
 nav button.on{color:var(--p);font-weight:600;border-top-color:var(--p)}
 footer{position:fixed;left:0;right:0;bottom:0;height:26px;line-height:26px;text-align:center;font-size:11px;background:var(--pd);color:#fff;z-index:100}
 .bar{display:flex;gap:8px;margin-bottom:10px}
@@ -78,8 +78,8 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const FOOT='@gabetechtechnologies.com. All rights reserved.';
 const DEFAULT_LOGO='data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="#d6336c"/><rect x="42" y="20" width="16" height="60" rx="4" fill="#fff"/><rect x="20" y="42" width="60" height="16" rx="4" fill="#fff"/></svg>');
-const DEFAULTS={name:"Marrion's Pharmacy",address:'Kamkuywa',phone:'',logo:'',currency:'KSh',pin:'1234',expiryDays:90,msg:'Thank you. Get well soon!',nextNo:1};
-let S={...DEFAULTS},items=[],cart=[],tab='sell',unlocked=false,q='',fil='all',tmpImg='',db;
+const DEFAULTS={name:"Marrion's Pharmacy",address:'Kamkuywa',phone:'',logo:'',currency:'KSh',user:'admin',pass:'',expiryDays:90,msg:'Thank you. Get well soon!',nextNo:1};
+let S={...DEFAULTS},items=[],cart=[],tab='home',unlocked=false,q='',fil='all',tmpImg='',db;
 const logo=()=>S.logo||DEFAULT_LOGO;
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const byId=id=>items.find(i=>i.id===id);
@@ -106,13 +106,47 @@ function closeModal(id='modal'){const m=$('#'+id);m.classList.remove('on');m.inn
 // ---------- shell ----------
 function render(){
  const a=$('#app');
- if(!unlocked){a.innerHTML=`<div class="login"><img src="${logo()}"><h2 style="margin:0;color:var(--pd)">${esc(S.name)}</h2><div class="hint">${esc(S.address)}${S.phone?' · '+esc(S.phone):''}</div><input id="pin" type="password" inputmode="numeric" placeholder="PIN" onkeydown="if(event.key==='Enter')login()"><button class="btn" onclick="login()">Unlock</button></div><footer>${FOOT}</footer>`;return}
- const T=[['sell','Sell'],['stock','Stock'],['alerts','Alerts'],['sales','Sales'],['set','Settings']];
- a.innerHTML=`<header><img src="${logo()}"><b>${esc(S.name)}</b><button onclick="unlocked=false;cart=[];render()">Lock</button></header><main id="main"></main><nav>${T.map(([k,l])=>`<button class="${tab===k?'on':''}" onclick="tab='${k}';render()">${l}${k==='alerts'&&alertCount()?' ('+alertCount()+')':''}</button>`).join('')}</nav><footer>${FOOT}</footer>`;
- ({sell:vSell,stock:vStock,alerts:vAlerts,sales:vSales,set:vSet})[tab]();
+ if(!unlocked){a.innerHTML=`<div class="login"><img src="${logo()}"><h2 style="margin:0;color:var(--pd)">${esc(S.name)}</h2><div class="hint">${esc(S.address)}${S.phone?' · '+esc(S.phone):''}</div><input id="lu" placeholder="Username" autocapitalize="none" autocomplete="username" style="letter-spacing:0;font-size:16px"><input id="lp" type="password" placeholder="Password" autocomplete="current-password" style="letter-spacing:0;font-size:16px" onkeydown="if(event.key==='Enter')login()"><button class="btn" onclick="login()">Log in</button></div><footer>${FOOT}</footer>`;return}
+ const T=[['home','Home'],['sell','Sell'],['stock','Stock'],['alerts','Alerts'],['sales','Sales'],['set','Settings']];
+ a.innerHTML=`<header><img src="${logo()}"><b>${esc(S.name)}</b><button onclick="unlocked=false;cart=[];render()">Log out</button></header><main id="main"></main><nav>${T.map(([k,l])=>`<button class="${tab===k?'on':''}" onclick="tab='${k}';render()">${l}${k==='alerts'&&alertCount()?' ('+alertCount()+')':''}</button>`).join('')}</nav><footer>${FOOT}</footer>`;
+ ({home:vDash,sell:vSell,stock:vStock,alerts:vAlerts,sales:vSales,set:vSet})[tab]();
 }
-function login(){if($('#pin').value===String(S.pin)){unlocked=true;render()}else{toast('Wrong PIN');$('#pin').value=''}}
+async function sha(t){try{const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('mpos|'+t));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}catch(e){return'plain:'+t}}
+async function login(){
+ const u=$('#lu').value.trim(),p=$('#lp').value;
+ const ok=u.toLowerCase()===S.user.toLowerCase()&&(S.pass?(await sha(p))===S.pass:p==='admin123');
+ if(ok){unlocked=true;tab='home';render()}else{toast('Wrong username or password');$('#lp').value=''}
+}
 const alertCount=()=>items.filter(i=>{const s=status(i);return s.expired||s.soon!=null||s.out||s.low}).length;
+// ---------- dashboard ----------
+const dayKey=ms=>{const d=new Date(ms);return new Date(d-d.getTimezoneOffset()*6e4).toISOString().slice(0,10)};
+async function vDash(){
+ const sales=await all('sales'),td=todayISO();
+ const today=sales.filter(s=>dayKey(s.date)===td);
+ const tot=a=>a.reduce((s,x)=>s+x.total,0);
+ const cost=a=>a.reduce((s,x)=>s+x.lines.reduce((c,l)=>c+l.qty*(l.cost!=null?l.cost:((byId(l.id)?.cost||0)/(byId(l.id)?.upp||1))),0),0);
+ const units=today.reduce((s,x)=>s+x.lines.reduce((c,l)=>c+l.qty,0),0);
+ const profit=tot(today)-cost(today);
+ const stockCost=items.reduce((s,i)=>s+(i.stock/(i.upp||1))*(i.cost||0),0),stockRetail=items.reduce((s,i)=>s+i.stock*i.price,0);
+ const out=items.filter(i=>status(i).out).length,low=items.filter(i=>status(i).low).length,exp=items.filter(i=>status(i).expired).length,soon=items.filter(i=>status(i).soon!=null).length;
+ const days=[];for(let k=6;k>=0;k--){const d=new Date();d.setDate(d.getDate()-k);const key=dayKey(d.getTime());days.push({key,l:d.toLocaleDateString([],{weekday:'short'}),v:tot(sales.filter(s=>dayKey(s.date)===key))})}
+ const mx=Math.max(1,...days.map(d=>d.v));
+ const by={};today.forEach(s=>s.lines.forEach(l=>{by[l.name]=by[l.name]||{q:0,t:0,u:l.unit};by[l.name].q+=l.qty;by[l.name].t+=l.total}));
+ const top=Object.entries(by).sort((a,b)=>b[1].t-a[1].t).slice(0,5);
+ const pm={};today.forEach(s=>pm[s.method]=(pm[s.method]||0)+s.total);
+ const card=(v,l,c)=>`<div class="stat"><b${c?` style="color:var(${c})"`:''}>${v}</b><span>${l}</span></div>`;
+ $('#main').innerHTML=`<h3>Today, ${new Date().toLocaleDateString([],{weekday:'long',day:'numeric',month:'short'})}</h3>
+ <div class="stats" style="grid-template-columns:1fr 1fr"><div class="stat"><b style="font-size:22px">${money(tot(today))}</b><span>Sales today</span></div><div class="stat"><b style="font-size:22px">${money(profit)}</b><span>Estimated profit</span></div></div>
+ <div class="stats">${card(today.length,'Receipts')}${card(units,'Units sold')}${card(today.length?money(tot(today)/today.length):'-','Average sale')}</div>
+ <button class="btn full" style="margin:0 0 12px" onclick="tab='sell';render()">New sale</button>
+ <h3>Stock</h3><div class="stats">${card(items.length,'Items')}${card(money(stockCost),'Value at cost')}${card(money(stockRetail),'Value at selling price')}</div>
+ <div class="stats" style="grid-template-columns:repeat(4,1fr)">${card(low,'Low','--warn')}${card(out,'Out','--bad')}${card(soon,'Expiring','--warn')}${card(exp,'Expired','--bad')}</div>
+ <button class="btn ghost full" style="margin:0 0 12px" onclick="tab='alerts';render()">View alerts</button>
+ <h3>Last 7 days</h3><div style="display:flex;gap:6px;align-items:flex-end;height:110px;background:#fff;border:1px solid var(--bd);border-radius:12px;padding:8px 8px 0">${days.map(d=>`<div style="flex:1;text-align:center;font-size:10px;color:var(--mu)"><div style="background:var(--p);border-radius:4px 4px 0 0;height:${Math.round(d.v/mx*70)}px;min-height:${d.v?2:0}px"></div>${d.l}</div>`).join('')}</div>
+ <p class="hint">Week total: ${money(days.reduce((s,d)=>s+d.v,0))}</p>
+ <h3>Top sellers today</h3>${top.length?top.map(([n,v])=>`<div class="item"><div class="mid"><div class="nm">${esc(n)}</div><div class="sub">${v.q} ${esc(pl(v.q,v.u||'unit'))}</div></div><b>${money(v.t)}</b></div>`).join(''):'<div class="empty">No sales yet today.</div>'}
+ ${Object.keys(pm).length?'<h3>Payments today</h3>'+Object.entries(pm).map(([m,v])=>`<div class="item"><div class="mid">${esc(m)}</div><b>${money(v)}</b></div>`).join(''):''}<div style="height:10px"></div>`;
+}
 // ---------- sell ----------
 function vSell(){
  $('#main').innerHTML=`<div class="bar"><input id="q" placeholder="Search name, barcode or category" value="${esc(q)}" oninput="q=this.value;sellList()"><button class="btn" onclick="scan(c=>{q=c;$('#q').value=c;sellList(true)})">Scan</button></div><div id="list"></div><div id="cb"></div>`;
@@ -146,7 +180,7 @@ function chg(t){const r=parseFloat($('#recv').value);$('#chg').textContent=r>=t?
 async function checkout(){
  const t=cartTotal(),r=$('#recv').value===''?t:parseFloat($('#recv').value);
  if(r<t)return toast('Amount received is less than the total');
- const lines=cart.map(l=>{const it=byId(l.id);return{id:it.id,name:it.name,unit:it.unit,qty:l.qty,price:it.price,total:l.qty*it.price}});
+ const lines=cart.map(l=>{const it=byId(l.id);return{id:it.id,name:it.name,unit:it.unit,qty:l.qty,price:it.price,cost:(it.cost||0)/(it.upp||1),total:l.qty*it.price}});
  const sale={id:uid(),no:S.nextNo++,date:Date.now(),lines,total:t,paid:r,change:r-t,method:$('#meth').value};
  for(const l of cart){const it=byId(l.id);it.stock-=l.qty;await put('items',it)}
  await put('sales',sale);await saveSettings();cart=[];
@@ -232,13 +266,13 @@ function vSet(){
  $('#main').innerHTML=`<h3>Pharmacy details</h3><label>Pharmacy name</label><input id="s_name" value="${esc(S.name)}"><label>Address</label><input id="s_addr" value="${esc(S.address)}"><label>Contact (phone)</label><input id="s_ph" value="${esc(S.phone)}">
  <label>Logo (shows on login and as receipt watermark)</label><div class="row"><img src="${logo()}" style="width:64px;height:64px;object-fit:contain;flex:none"><input type="file" accept="image/*" onchange="readImg(this.files[0],500,'image/png',d=>{S.logo=d;saveSettings();render();toast('Logo updated')})"></div>
  <div class="grid2"><div><label>Currency</label><input id="s_cur" value="${esc(S.currency)}"></div><div><label>Expiry warning (days)</label><input id="s_exp" type="number" value="${S.expiryDays}"></div></div>
- <label>Receipt message</label><input id="s_msg" value="${esc(S.msg)}"><label>Login PIN</label><input id="s_pin" type="password" inputmode="numeric" value="${esc(S.pin)}">
+ <label>Receipt message</label><input id="s_msg" value="${esc(S.msg)}"><h3 style="margin-top:16px">Login</h3><label>Username</label><input id="s_user" value="${esc(S.user)}" autocapitalize="none"><label>New password (leave blank to keep current)</label><input id="s_pass" type="password" autocomplete="new-password">
  <button class="btn full" onclick="saveSet()">Save settings</button>
  <h3 style="margin-top:20px">Backup</h3><p class="hint">All data stays on this phone. Back up regularly and keep a copy somewhere safe.</p>
  <button class="btn ghost full" onclick="backup()">Download backup</button><input type="file" id="rest" accept=".json" hidden onchange="restore(this.files[0])"><button class="btn ghost full" onclick="$('#rest').click()">Restore from backup</button><div style="height:12px"></div>`;
 }
 async function saveSet(){
- S.name=$('#s_name').value.trim()||DEFAULTS.name;S.address=$('#s_addr').value.trim();S.phone=$('#s_ph').value.trim();S.currency=$('#s_cur').value.trim()||'KSh';S.expiryDays=parseInt($('#s_exp').value)||90;S.msg=$('#s_msg').value.trim();S.pin=$('#s_pin').value.trim()||'1234';
+ S.name=$('#s_name').value.trim()||DEFAULTS.name;S.address=$('#s_addr').value.trim();S.phone=$('#s_ph').value.trim();S.currency=$('#s_cur').value.trim()||'KSh';S.expiryDays=parseInt($('#s_exp').value)||90;S.msg=$('#s_msg').value.trim();S.user=$('#s_user').value.trim()||'admin';const np=$('#s_pass').value;if(np){if(np.length<6)return toast('Password must be at least 6 characters');S.pass=await sha(np)}
  await saveSettings();render();toast('Settings saved');
 }
 async function backup(){
